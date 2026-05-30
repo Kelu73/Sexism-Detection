@@ -8,3 +8,4 @@ seaborn
 fastapi
 uvicorn
 pydantic
+opencc

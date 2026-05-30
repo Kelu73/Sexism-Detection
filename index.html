@@ -288,23 +288,32 @@
             });
             const data = await response.json();
 
-            // 👈 升級：動態將後端傳回的信心值 (data.confidence) 渲染到畫面上
+            // 👈 升級呈現：動態將後端傳回的信心值與翻譯後的英文文本渲染到畫面上
             if (data.prediction === "Sexist") {
                 resultBox.className = "sexist";
                 document.getElementById("result-label").textContent = "Detection Result";
                 document.getElementById("result-text").textContent = "⚠ Sexist content detected";
-                document.getElementById("result-sub").innerHTML = `This text contains language associated with sexism.<br><br><strong>Model Confidence:</strong> ${data.confidence}%`;
+                document.getElementById("result-sub").innerHTML = `
+                    This text contains language associated with sexism.<br><br>
+                    <strong>AI Translation Ref:</strong> "${data.translation}"<br>
+                    <strong>Model Confidence:</strong> ${data.confidence}%
+                `;
             } else {
                 resultBox.className = "not-sexist";
                 document.getElementById("result-label").textContent = "Detection Result";
                 document.getElementById("result-text").textContent = "✓ No sexist content detected";
-                document.getElementById("result-sub").innerHTML = `This text appears to be free of sexist language.<br><br><strong>Model Confidence:</strong> ${data.confidence}%`;
+                document.getElementById("result-sub").innerHTML = `
+                    This text appears to be free of sexist language.<br><br>
+                    <strong>AI Translation Ref:</strong> "${data.translation}"<br>
+                    <strong>Model Confidence:</strong> ${data.confidence}%
+                `;
             }
         } catch (error) {
+            console.error("Error during analysis:", error);
             resultBox.className = "error-state";
-            document.getElementById("result-label").textContent = "Connection Error";
-            document.getElementById("result-text").textContent = "Unable to reach the backend API";
-            document.getElementById("result-sub").textContent = "Make sure FastAPI is running: python main.py";
+            document.getElementById("result-label").textContent = "Error";
+            document.getElementById("result-text").textContent = "An error occurred while analyzing the text.";
+            document.getElementById("result-sub").textContent = "Please try again later.";
         } finally {
             btn.disabled = false;
             spinner.style.display = "none";
