@@ -288,16 +288,17 @@
             });
             const data = await response.json();
 
+            // 👈 升級：動態將後端傳回的信心值 (data.confidence) 渲染到畫面上
             if (data.prediction === "Sexist") {
                 resultBox.className = "sexist";
                 document.getElementById("result-label").textContent = "Detection Result";
                 document.getElementById("result-text").textContent = "⚠ Sexist content detected";
-                document.getElementById("result-sub").textContent = "This text contains language associated with sexism.";
+                document.getElementById("result-sub").innerHTML = `This text contains language associated with sexism.<br><br><strong>Model Confidence:</strong> ${data.confidence}%`;
             } else {
                 resultBox.className = "not-sexist";
                 document.getElementById("result-label").textContent = "Detection Result";
                 document.getElementById("result-text").textContent = "✓ No sexist content detected";
-                document.getElementById("result-sub").textContent = "This text appears to be free of sexist language.";
+                document.getElementById("result-sub").innerHTML = `This text appears to be free of sexist language.<br><br><strong>Model Confidence:</strong> ${data.confidence}%`;
             }
         } catch (error) {
             resultBox.className = "error-state";
