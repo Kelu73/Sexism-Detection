@@ -52,13 +52,13 @@ def align_bias_keywords(text: str) -> str:
     return aligned_text
 
 
-# ── 1. 定義並載入兩個模型的路徑 ──────────────────────────────────────────
+# ── 1. 定義並載入兩個模型的路徑 ─────────────────category_mo─────────────────────────
 BASE_DIR = Path(__file__).parent.parent.resolve()
 
 # Task A: 二元分類模型 (Sexist / Not Sexist)
 MODEL_A_PATH = BASE_DIR / "bert_sexism_model"
 # Task B: 四類細分模型 (Threats, Derogation, Animosity, Prejudiced)
-MODEL_B_PATH = BASE_DIR / "bert_sexism_category_model"
+MODEL_B_PATH = BASE_DIR / "bert_sexism_del"
 
 print(f"【載入 Task A 模型】: {MODEL_A_PATH}")
 tokenizer_a = BertTokenizer.from_pretrained(str(MODEL_A_PATH), local_files_only=True)

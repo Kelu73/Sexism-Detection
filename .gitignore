@@ -13,3 +13,9 @@ bert_sexism_model/
 
 # 排除數據集
 *.csv
+bert_sexism_category_model/config.json
+bert_sexism_category_model/special_tokens_map.json
+bert_sexism_category_model/tokenizer_config.json
+bert_sexism_category_model/vocab.txt
+.gitignore
+bert_sexism_category_model/model.safetensors

@@ -19,6 +19,10 @@
             --safe: #1a7a42;
             --safe-border: #a8ddb8;
             --border: #e2ddd8;
+            /* 💡 新增 Task B 專屬顏色：精緻的棕金色調，符合學術分層感 */
+            --category-bg: #fffcf5;
+            --category-text: #b27a00;
+            --category-border: #f5e4bd;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -156,6 +160,18 @@
             animation: fadeIn 0.3s ease;
         }
 
+        /* 💡 新增 Task B 細分類型專屬的卡片樣式 */
+        #category-box {
+            margin-top: 16px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            display: none;
+            animation: fadeIn 0.4s ease;
+            background: var(--category-bg);
+            border: 1.5px solid var(--category-border);
+            color: var(--category-text);
+        }
+
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
         .result-label {
@@ -176,7 +192,7 @@
             font-size: 13px;
             font-weight: 400;
             margin-top: 4px;
-            opacity: 0.75;
+            opacity: 0.85;
         }
 
         .sexist {
@@ -208,21 +224,6 @@
             border-top: 1px solid var(--border);
             margin: 36px 0 24px;
         }
-
-        .footer {
-            font-size: 12px;
-            color: var(--muted);
-            text-align: center;
-        }
-
-        .footer span {
-            display: inline-block;
-            width: 6px; height: 6px;
-            border-radius: 50%;
-            background: #c5c0b8;
-            margin: 0 8px;
-            vertical-align: middle;
-        }
     </style>
 </head>
 <body>
@@ -230,7 +231,7 @@
 <div class="card">
     <div class="badge">NLP Final Project</div>
     <h1>Sexism Detection AI</h1>
-    <p class="subtitle">Enter any English text below to analyze it for sexist language using a fine-tuned BERT model.</p>
+    <p class="subtitle">Enter text below to analyze it for sexist language (Task A) and determine its category (Task B) using fine-tuned BERT models.</p>
 
     <label class="input-label" for="inputText">Input Text</label>
     <textarea id="inputText" placeholder="e.g. Women don't belong in engineering fields..."></textarea>
@@ -247,6 +248,12 @@
         <div class="result-sub" id="result-sub"></div>
     </div>
 
+    <div id="category-box">
+        <div class="result-label">Task B - Sexism Category</div>
+        <div class="result-text" id="category-text-ui">Analyzing category...</div>
+        <div class="result-sub" id="category-sub-ui"></div>
+    </div>
+
     <hr class="divider">
 </div>
 
@@ -261,6 +268,7 @@
     async function checkSexism() {
         const text = textarea.value;
         const resultBox = document.getElementById("result-box");
+        const categoryBox = document.getElementById("category-box");
         const btn = document.getElementById("analyzeBtn");
         const spinner = document.getElementById("spinner");
         const btnText = document.getElementById("btnText");
@@ -270,12 +278,15 @@
             return;
         }
 
-        // Loading state
+        // Loading 狀態重置
         btn.disabled = true;
         spinner.style.display = "block";
         btnText.textContent = "Analyzing...";
+        
         resultBox.style.display = "block";
         resultBox.className = "loading-state";
+        categoryBox.style.display = "none"; // 一開始先隱藏 Task B
+
         document.getElementById("result-label").textContent = "Status";
         document.getElementById("result-text").textContent = "Analyzing your text...";
         document.getElementById("result-sub").textContent = "The model is processing your input.";
@@ -288,32 +299,42 @@
             });
             const data = await response.json();
 
-            // 👈 升級呈現：動態將後端傳回的信心值與翻譯後的英文文本渲染到畫面上
+            // ── 渲染 Task A 與基礎資訊 ─────────────────────────────────
+            const infoMeta = `
+                <br><strong>AI Translation Ref:</strong> "${data.translation}"<br>
+                <strong>Keywords Extracted:</strong> ${data.keywords.join(', ') || 'None'}<br>
+                <strong>Task A Confidence:</strong> ${data.confidence}%
+            `;
+
             if (data.prediction === "Sexist") {
                 resultBox.className = "sexist";
-                document.getElementById("result-label").textContent = "Detection Result";
+                document.getElementById("result-label").textContent = "Task A - Binary Result";
                 document.getElementById("result-text").textContent = "⚠ Sexist content detected";
-                document.getElementById("result-sub").innerHTML = `
-                    This text contains language associated with sexism.<br><br>
-                    <strong>AI Translation Ref:</strong> "${data.translation}"<br>
-                    <strong>Model Confidence:</strong> ${data.confidence}%
+                document.getElementById("result-sub").innerHTML = `This text contains language associated with sexism.${infoMeta}`;
+                
+                // ── 💡 渲染 Task B 數據 ─────────────────────────────────
+                categoryBox.style.display = "block";
+                document.getElementById("category-text-ui").textContent = data.category;
+                document.getElementById("category-sub-ui").innerHTML = `
+                    The text has been sub-classified by our fine-tuned multiclass model.<br>
+                    <strong>Task B Confidence:</strong> ${data.category_confidence}%
                 `;
             } else {
                 resultBox.className = "not-sexist";
-                document.getElementById("result-label").textContent = "Detection Result";
+                document.getElementById("result-label").textContent = "Task A - Binary Result";
                 document.getElementById("result-text").textContent = "✓ No sexist content detected";
-                document.getElementById("result-sub").innerHTML = `
-                    This text appears to be free of sexist language.<br><br>
-                    <strong>AI Translation Ref:</strong> "${data.translation}"<br>
-                    <strong>Model Confidence:</strong> ${data.confidence}%
-                `;
+                document.getElementById("result-sub").innerHTML = `This text appears to be free of sexist language.${infoMeta}`;
+                
+                // 非歧視言論不需要顯示 Task B，確保介面簡潔性
+                categoryBox.style.display = "none";
             }
         } catch (error) {
             console.error("Error during analysis:", error);
             resultBox.className = "error-state";
             document.getElementById("result-label").textContent = "Error";
             document.getElementById("result-text").textContent = "An error occurred while analyzing the text.";
-            document.getElementById("result-sub").textContent = "Please try again later.";
+            document.getElementById("result-sub").textContent = "Please check if your backend server is running.";
+            categoryBox.style.display = "none";
         } finally {
             btn.disabled = false;
             spinner.style.display = "none";
