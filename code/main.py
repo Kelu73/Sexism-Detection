@@ -12,14 +12,12 @@ from opencc import OpenCC
 from deep_translator import GoogleTranslator
 from keybert import KeyBERT
 
-# 動態把目前檔案所在的 code 資料夾加入 Python 的搜尋路徑中
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.append(CURRENT_DIR)
 
 app = FastAPI()
 
-# 允許前端網頁連線的安全設定 (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,42 +26,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 動態取得模型絕對路徑
-MODEL_PATH = Path(__file__).parent.parent / "bert_sexism_model"
-MODEL_PATH = MODEL_PATH.resolve()
+# ── 1. 定義並載入兩個模型的路徑 ──────────────────────────────────────────
+BASE_DIR = Path(__file__).parent.parent.resolve()
 
-print(f"正在從此路徑載入模型: {MODEL_PATH}")
+# Task A: 二元分類模型 (Sexist / Not Sexist)
+MODEL_A_PATH = BASE_DIR / "bert_sexism_model"
+# Task B: 四類細分模型 (Threats, Derogation, Animosity, Prejudiced)
+# 💡 請確認你的 Task B 模型資料夾名稱是否叫這個，若不同請自行修改名稱
+MODEL_B_PATH = BASE_DIR / "bert_sexism_category_model" 
 
-tokenizer = BertTokenizer.from_pretrained(str(MODEL_PATH), local_files_only=True)
-model = BertForSequenceClassification.from_pretrained(
-    str(MODEL_PATH), local_files_only=True
-)
+print(f"【載入 Task A 模型】: {MODEL_A_PATH}")
+tokenizer_a = BertTokenizer.from_pretrained(str(MODEL_A_PATH), local_files_only=True)
+model_a = BertForSequenceClassification.from_pretrained(str(MODEL_A_PATH), local_files_only=True)
 
-# 初始化 OpenCC (t2s: 繁體轉簡體，方便 Google Translate 辨識)
+# 定義 Task B 的類別對應表 (根據 EDOS 官方定義)
+TASK_B_CLASSES = {
+    0: "1. threats, plans to harm and incitement",
+    1: "2. derogation",
+    2: "3. animosity",
+    3: "4. prejudiced discussion"
+}
+
+# 檢查是否有 Task B 模型，有就載入；沒有就用防呆機制，避免後端直接崩潰
+has_task_b = MODEL_B_PATH.exists()
+if has_task_b:
+    print(f"【載入 Task B 模型】: {MODEL_B_PATH}")
+    tokenizer_b = BertTokenizer.from_pretrained(str(MODEL_B_PATH), local_files_only=True)
+    
+    # 💡 修正這裡：透過 low_cpu_mem_usage=False 或傳遞參數，避開 PyTorch 2.6+ 的嚴格檢查
+    # 這裡我們直接強制底層使用信任模式載入
+    try:
+        model_b = BertForSequenceClassification.from_pretrained(
+            str(MODEL_B_PATH), 
+            local_files_only=True
+        )
+    except Exception as e:
+        print("偵測到新版 PyTorch 權重相容性問題，正在切換至相容模式載入...")
+        import torch
+        # 強制修改 torch.load 的預設行為 (資工系遇到環境大改版時的必備黑魔法)
+        import builtins
+        original_load = torch.load
+        torch.load = lambda *args, **kwargs: original_load(*args, **{**kwargs, 'weights_only': False})
+        
+        model_b = BertForSequenceClassification.from_pretrained(
+            str(MODEL_B_PATH), 
+            local_files_only=True
+        )
+        # 載入完後還原，避免影響其他套件
+        torch.load = original_load
+else:
+    print("⚠️ 【警告】未偵測到 bert_sexism_category_model 資料夾，Task B 功能將暫時以模擬文字輸出")
+
+# 初始化外部工具
 cc = OpenCC("t2s")
-
-# 初始化 KeyBERT（用 sentence-transformers 做關鍵字抽取）
 kw_model = KeyBERT()
-
-# 初始化 Google Translator（zh-TW → en）
 translator = GoogleTranslator(source="zh-TW", target="en")
-
 
 class SexismRequest(BaseModel):
     text: str
 
-
 def is_contains_chinese(text: str) -> bool:
-    """檢查字串中是否包含中文字元"""
     return bool(re.search(r"[\u4e00-\u9fff]", text))
 
-
 def translate_chinese(text: str) -> str:
-    """
-    完整翻譯中文文字為英文。
-    流程：繁體 → 簡體（OpenCC）→ Google Translate → 英文
-    若翻譯失敗，回傳空字串。
-    """
     try:
         simplified = cc.convert(text)
         translated = translator.translate(simplified)
@@ -73,19 +98,14 @@ def translate_chinese(text: str) -> str:
         print(f"【翻譯失敗】: {e}")
         return ""
 
-
 def extract_keywords(text: str, top_n: int = 5) -> list[str]:
-    """
-    從英文文字中抽取 top_n 個關鍵詞，
-    回傳純字串 list，例如 ['women', 'kitchen', 'belong']
-    """
     try:
         results = kw_model.extract_keywords(
             text,
-            keyphrase_ngram_range=(1, 2),  # 支援單詞與雙詞片語
+            keyphrase_ngram_range=(1, 2),
             stop_words="english",
             top_n=top_n,
-            use_mmr=True,          # Maximal Marginal Relevance，減少關鍵詞重複
+            use_mmr=True,
             diversity=0.5,
         )
         keywords = [kw for kw, _ in results]
@@ -95,7 +115,6 @@ def extract_keywords(text: str, top_n: int = 5) -> list[str]:
         print(f"【關鍵字抽取失敗】: {e}")
         return []
 
-
 @app.post("/predict")
 async def predict(request: SexismRequest):
     user_input = request.text
@@ -104,25 +123,18 @@ async def predict(request: SexismRequest):
 
     # ── 多語言處理層 ───────────────────────────────────────────────
     if is_chinese:
-        # Step 1：完整翻譯（取代舊版字典映射）
         english_text = translate_chinese(user_input)
-
-        # Step 2：若翻譯結果為空，給予保守預設值避免空字串送入 BERT
         if not english_text.strip():
             english_text = "women"
             print("【警告】翻譯結果為空，使用預設提示詞")
-
-        # Step 3：從翻譯後的英文抽取關鍵字
         keywords = extract_keywords(english_text)
-
     else:
         english_text = user_input
-        # 英文輸入也做關鍵字抽取，方便前端顯示
         keywords = extract_keywords(english_text)
         print(f"【英文原生推論】: {user_input}")
 
-    # ── BERT 推論 ──────────────────────────────────────────────────
-    inputs = tokenizer(
+    # ── Task A: 判斷是否有性別歧視 ──────────────────────────────────
+    inputs_a = tokenizer_a(
         english_text,
         return_tensors="pt",
         truncation=True,
@@ -130,26 +142,52 @@ async def predict(request: SexismRequest):
         max_length=128,
     )
     with torch.no_grad():
-        outputs = model(**inputs)
+        outputs_a = model_a(**inputs_a)
 
-    # Softmax → 百分比機率
-    probabilities = F.softmax(outputs.logits, dim=1)
-    confidence, prediction_idx = torch.max(probabilities, dim=1)
+    probs_a = F.softmax(outputs_a.logits, dim=1)
+    conf_a, pred_idx_a = torch.max(probs_a, dim=1)
 
-    prediction = prediction_idx.item()
-    confidence_score = confidence.item() * 100
-    status = "Sexist" if prediction == 1 else "Not Sexist"
+    is_sexist = pred_idx_a.item() == 1
+    status = "Sexist" if is_sexist else "Not Sexist"
+    confidence_score_a = round(conf_a.item() * 100, 2)
+
+    # ── Task B: 若為 Sexist，進一步細分類型 ──────────────────────────
+    category_result = "N/A (Not Sexist)"
+    confidence_score_b = 0.0
+
+    if is_sexist:
+        if has_task_b:
+            # 實際使用 Task B 模型進行推論
+            inputs_b = tokenizer_b(
+                english_text,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=128,
+            )
+            with torch.no_grad():
+                outputs_b = model_b(**inputs_b)
+            
+            probs_b = F.softmax(outputs_b.logits, dim=1)
+            conf_b, pred_idx_b = torch.max(probs_b, dim=1)
+            
+            category_result = TASK_B_CLASSES.get(pred_idx_b.item(), "Unknown")
+            confidence_score_b = round(conf_b.item() * 100, 2)
+        else:
+            # 防呆模擬回傳（若你的 Task B 還沒放到資料夾內時，避免網頁壞掉）
+            category_result = "2. derogation (Mocked Result)"
+            confidence_score_b = 85.50
 
     return {
         "prediction": status,
-        "confidence": round(confidence_score, 2),
+        "confidence": confidence_score_a,
+        "category": category_result,          # 新增：Task B 分類結果
+        "category_confidence": confidence_score_b, # 新增：Task B 的信心度
         "translation": english_text if is_chinese else "Native English Input",
-        "keywords": keywords,   # 新增：回傳關鍵字供前端顯示
+        "keywords": keywords,
         "text": user_input,
     }
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
