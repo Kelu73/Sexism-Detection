@@ -10,3 +10,5 @@ uvicorn
 pydantic
 opencc
 deep_translator
+keybert
+sentence-transformers
